@@ -22,6 +22,15 @@
     </div>
     <div class="auth-panel"><button class="theme-toggle auth-theme" type="button" data-theme-toggle aria-label="Toggle theme">◐</button><div class="auth-card"><div class="mobile-brand brand"><span class="brand-mark">↗</span> applykalang<span class="brand-dot">.</span></div><span class="eyebrow">WELCOME TO APPLYKALANG</span><h2 id="auth-title">Welcome back</h2><p id="auth-subtitle" class="muted">Sign in to pick up where you left off.</p>
       <form id="auth-form" class="stack"><label>Email address<input id="auth-email" type="email" autocomplete="email" placeholder="you@example.com" required maxlength="254" /></label><label>Password<input id="auth-password" type="password" autocomplete="current-password" placeholder="At least 6 characters" required minlength="6" /></label><button class="btn btn-primary full" id="auth-submit" type="submit">Sign in <span>→</span></button></form>
+      <button type="button" class="auth-link" id="forgot-password">Forgot password?</button>
+      <div id="auth-feedback" class="auth-feedback hidden" role="status" aria-live="polite"></div>
+      <section id="verification-panel" class="verification-panel hidden" aria-live="polite">
+        <h3>Verify your email</h3>
+        <p>We sent a verification link to <strong id="verification-email"></strong>. Check your inbox and spam folder, then come back here.</p>
+        <button class="btn btn-primary full" type="button" id="check-verification">I've verified my email →</button>
+        <button class="auth-link" type="button" id="resend-verification">Resend verification email</button>
+        <button class="auth-link" type="button" id="verification-signout">Use another account</button>
+      </section>
       <p class="auth-switch" id="auth-switch-line">New here? <button type="button" id="auth-switch">Create an account</button></p><p class="auth-footnote">Your applications are private to your account.</p><footer class="auth-credit">ApplyKaLang &copy; 2026 &nbsp;·&nbsp; Developed by Kjov</footer>
     </div></div>
   </section>

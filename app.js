@@ -1,5 +1,5 @@
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/11.10.0/firebase-app.js';
-import { getAuth, onAuthStateChanged, createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut } from 'https://www.gstatic.com/firebasejs/11.10.0/firebase-auth.js';
+import { getAuth, onAuthStateChanged, createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut, sendEmailVerification, sendPasswordResetEmail, reload } from 'https://www.gstatic.com/firebasejs/11.10.0/firebase-auth.js';
 import { getFirestore, collection, addDoc, updateDoc, deleteDoc, doc, onSnapshot, serverTimestamp } from 'https://www.gstatic.com/firebasejs/11.10.0/firebase-firestore.js';
 
 const firebaseConfig = {
@@ -29,10 +29,94 @@ function badge(status){ return `<span class="status status-${escapeHTML(status.t
 function setTheme(theme){ document.documentElement.dataset.theme=theme; localStorage.setItem('applykalang-theme',theme); }
 setTheme(localStorage.getItem('applykalang-theme')==='dark'?'dark':'light');
 document.querySelectorAll('[data-theme-toggle]').forEach(btn=>btn.addEventListener('click',()=>setTheme(document.documentElement.dataset.theme==='dark'?'light':'dark')));
-function authMode(register){ isRegister=register; $('auth-title').textContent=register?'Create your account':'Welcome back'; $('auth-subtitle').textContent=register?'Start tracking your next opportunity.':'Sign in to pick up where you left off.'; $('auth-submit').innerHTML=register?'Create account <span>→</span>':'Sign in <span>→</span>'; $('auth-switch-line').firstChild.textContent=register?'Already have an account? ':'New here? '; $('auth-switch').textContent=register?'Sign in':'Create an account'; $('auth-password').autocomplete=register?'new-password':'current-password'; }
+function feedback(message){$('auth-feedback').textContent=message;$('auth-feedback').classList.remove('hidden');}
+function authError(err){
+  return ({
+    'auth/email-already-in-use':'That email already has an account. Try signing in.',
+    'auth/invalid-credential':'Incorrect email or password.',
+    'auth/weak-password':'Use a stronger password (at least 6 characters).',
+    'auth/invalid-email':'Please enter a valid email.',
+    'auth/too-many-requests':'Too many attempts. Please wait and try again.',
+    'auth/network-request-failed':'Network error. Check your connection and try again.',
+    'auth/unauthorized-domain':'This domain is not authorized in Firebase Authentication settings.'
+  })[err.code] || 'Something went wrong. Please try again.';
+}
+function authMode(register){
+  isRegister=register;
+  $('auth-title').textContent=register?'Create your account':'Welcome back';
+  $('auth-subtitle').textContent=register?'Start tracking your next opportunity.':'Sign in to pick up where you left off.';
+  $('auth-submit').innerHTML=register?'Create account <span>→</span>':'Sign in <span>→</span>';
+  $('auth-switch-line').firstChild.textContent=register?'Already have an account? ':'New here? ';
+  $('auth-switch').textContent=register?'Sign in':'Create an account';
+  $('auth-password').autocomplete=register?'new-password':'current-password';
+  $('forgot-password').classList.toggle('hidden',register);
+  $('auth-feedback').classList.add('hidden');
+}
+function showVerification(current){
+  $('verification-email').textContent=current.email||'your email';
+  $('verification-panel').classList.remove('hidden');
+  $('auth-form').classList.add('hidden');
+  $('auth-switch-line').classList.add('hidden');
+  $('forgot-password').classList.add('hidden');
+  $('auth-title').textContent='One last step';
+  $('auth-subtitle').textContent='Verify your email to access your workspace.';
+}
+function hideVerification(){
+  $('verification-panel').classList.add('hidden');
+  $('auth-form').classList.remove('hidden');
+  $('auth-switch-line').classList.remove('hidden');
+  authMode(false);
+}
 $('auth-switch').addEventListener('click',()=>authMode(!isRegister));
-$('auth-form').addEventListener('submit',async e=>{e.preventDefault();const email=$('auth-email').value.trim(),password=$('auth-password').value,btn=$('auth-submit');btn.disabled=true;try{if(isRegister) await createUserWithEmailAndPassword(auth,email,password);else await signInWithEmailAndPassword(auth,email,password);}catch(err){notify(({ 'auth/email-already-in-use':'That email already has an account. Try signing in.','auth/invalid-credential':'Incorrect email or password.','auth/weak-password':'Use a stronger password.','auth/invalid-email':'Please enter a valid email.'})[err.code]||err.message||'Could not sign in.');}finally{btn.disabled=false;}});
-$('sign-out').addEventListener('click',async()=>{try{await signOut(auth);}catch(err){notify(err.message);}});
+$('auth-form').addEventListener('submit',async e=>{
+  e.preventDefault();
+  const email=$('auth-email').value.trim(),password=$('auth-password').value,btn=$('auth-submit');
+  btn.disabled=true;
+  $('auth-feedback').classList.add('hidden');
+  try {
+    if(isRegister){
+      const result=await createUserWithEmailAndPassword(auth,email,password);
+      try{await sendEmailVerification(result.user);feedback('Verification email sent. Check your inbox and spam folder.');}
+      catch(err){feedback('Account created, but the verification email could not be sent: '+authError(err)+' Try Resend verification email.');}
+      // onAuthStateChanged will show the verification panel.
+      if(auth.currentUser?.uid===result.user.uid)showVerification(result.user);
+    }else{
+      await signInWithEmailAndPassword(auth,email,password);
+    }
+  }catch(err){feedback(authError(err));}
+  finally{btn.disabled=false;}
+});
+$('forgot-password').addEventListener('click',async()=>{
+  const email=$('auth-email').value.trim();
+  if(!email){feedback('Enter your email address above first, then click Forgot password.');$('auth-email').focus();return;}
+  const btn=$('forgot-password');btn.disabled=true;
+  try{
+    await sendPasswordResetEmail(auth,email);
+    feedback('If an account exists for this address, a password reset email will arrive shortly. Check spam too.');
+  }catch(err){
+    feedback(err.code==='auth/invalid-email'?'Please enter a valid email address.':authError(err));
+  }finally{btn.disabled=false;}
+});
+$('resend-verification').addEventListener('click',async()=>{
+  const current=auth.currentUser;if(!current)return;
+  const btn=$('resend-verification');btn.disabled=true;
+  try{await sendEmailVerification(current);feedback('Verification email sent. Check your inbox and spam folder.');}
+  catch(err){feedback(authError(err));}
+  finally{btn.disabled=false;}
+});
+$('check-verification').addEventListener('click',async()=>{
+  const current=auth.currentUser;if(!current)return;
+  const btn=$('check-verification');btn.disabled=true;
+  try{
+    await reload(current);
+    await current.getIdToken(true);
+    if(current.emailVerified){feedback('Email verified! Loading your workspace…');startWorkspace(current);}
+    else feedback('Your email is not verified yet. Open the link in your email, then try again.');
+  }catch(err){feedback(authError(err));}
+  finally{btn.disabled=false;}
+});
+$('verification-signout').addEventListener('click',()=>signOut(auth).catch(err=>feedback(authError(err))));
+$('sign-out').addEventListener('click',async()=>{try{await signOut(auth);}catch(err){notify(authError(err));}});
 function showView(name){document.querySelectorAll('.view').forEach(el=>el.classList.toggle('hidden',el.id!==`view-${name}`));document.querySelectorAll('.nav-item').forEach(el=>el.classList.toggle('active',el.dataset.view===name));$('breadcrumb').textContent=({overview:'Overview',applications:'Applications',followups:'Follow-ups'})[name];}
 document.querySelectorAll('[data-view]').forEach(el=>el.addEventListener('click',()=>showView(el.dataset.view)));
 document.querySelectorAll('[data-add]').forEach(el=>el.addEventListener('click',()=>openForm()));
@@ -52,4 +136,33 @@ $('followups-list').innerHTML=upcoming.length?upcoming.map(x=>`<div class="follo
 function renderTable(){const search=$('search').value.trim().toLowerCase(),status=$('status-filter').value,sort=$('sort-filter').value;let filtered=applications.filter(x=>(!status||x.status===status)&&(!search||`${x.company} ${x.position} ${x.platform}`.toLowerCase().includes(search)));if(sort==='company')filtered.sort((a,b)=>a.company.localeCompare(b.company));else filtered.sort(byNewest);if(sort==='oldest')filtered.reverse();$('applications-body').innerHTML=filtered.length?filtered.map(x=>`<tr><td><div class="table-job">${iconFor(x.company)}<div><strong>${escapeHTML(x.position)}</strong><small>${escapeHTML(x.company)}${x.jobUrl&&safeUrl(x.jobUrl)?` · <a href="${escapeHTML(safeUrl(x.jobUrl))}" target="_blank" rel="noopener noreferrer">Job link ↗</a>`:''}</small></div></div></td><td>${badge(x.status)}</td><td>${escapeHTML(x.platform||'—')}</td><td>${dateLabel(x.appliedDate)}</td><td><div class="table-actions"><button class="small-button" data-edit="${escapeHTML(x.id)}">Edit</button><button class="small-button" data-delete="${escapeHTML(x.id)}">Delete</button></div></td></tr>`).join(''):`<tr><td colspan="5">${empty('No applications found','Try a different filter or add a new application.')}</td></tr>`;$('results-count').textContent=`${filtered.length} application${filtered.length===1?'':'s'}`;}
 ['search','status-filter','sort-filter'].forEach(id=>$(id).addEventListener('input',renderTable));
 document.addEventListener('click',e=>{const edit=e.target.closest('[data-edit]'),del=e.target.closest('[data-delete]');if(edit){const item=applications.find(x=>x.id===edit.dataset.edit);if(item)openForm(item);}if(del)requestDelete(del.dataset.delete);});
-onAuthStateChanged(auth,current=>{if(unsubscribe){unsubscribe();unsubscribe=null;}user=current;applications=[];if(current){$('user-email').textContent=current.email||'';$('user-name').textContent=current.email?.split('@')[0]||'My account';$('user-avatar').textContent=(current.email||'U')[0].toUpperCase();$('auth-screen').classList.add('hidden');$('app-screen').classList.remove('hidden');$('today').textContent=new Date().toLocaleDateString(undefined,{weekday:'short',month:'short',day:'numeric'});showView('overview');unsubscribe=onSnapshot(collection(db,'users',current.uid,'applications'),snapshot=>{applications=snapshot.docs.map(d=>({id:d.id,...d.data()}));render();},err=>notify('Unable to load applications: '+err.message));}else{$('app-screen').classList.add('hidden');$('auth-screen').classList.remove('hidden');authMode(false);} $('loading-screen').classList.add('hidden');},err=>{$('loading-screen').classList.add('hidden');notify(err.message);});
+function startWorkspace(current){
+  if(!current?.emailVerified)return;
+  if(unsubscribe){unsubscribe();unsubscribe=null;}
+  user=current;
+  $('user-email').textContent=current.email||'';
+  $('user-name').textContent=current.email?.split('@')[0]||'My account';
+  $('user-avatar').textContent=(current.email||'U')[0].toUpperCase();
+  $('auth-screen').classList.add('hidden');
+  $('app-screen').classList.remove('hidden');
+  $('today').textContent=new Date().toLocaleDateString(undefined,{weekday:'short',month:'short',day:'numeric'});
+  showView('overview');
+  unsubscribe=onSnapshot(collection(db,'users',current.uid,'applications'),
+    snapshot=>{applications=snapshot.docs.map(d=>({id:d.id,...d.data()}));render();},
+    err=>notify('Unable to load applications: '+err.message));
+}
+onAuthStateChanged(auth,async current=>{
+  if(unsubscribe){unsubscribe();unsubscribe=null;}
+  user=null;applications=[];
+  $('app-screen').classList.add('hidden');
+  if(current){
+    try{await current.reload();await current.getIdToken(true);}catch(err){notify(authError(err));}
+    if(auth.currentUser?.uid!==current.uid){$('loading-screen').classList.add('hidden');return;}
+    if(current.emailVerified)startWorkspace(current);
+    else{$('auth-screen').classList.remove('hidden');showVerification(current);}
+  }else{
+    $('auth-screen').classList.remove('hidden');
+    hideVerification();
+  }
+  $('loading-screen').classList.add('hidden');
+},err=>{$('loading-screen').classList.add('hidden');notify(authError(err));});
